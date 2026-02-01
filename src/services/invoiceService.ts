@@ -893,7 +893,9 @@ export const generateInvoicePdf = async (
 
       // Footer
       yPosition = doc.page.height - MARGIN - 30;
-      doc.moveTo(MARGIN, yPosition).lineTo(doc.page.width - MARGIN, yPosition).stroke({ dash: [5, 5] });
+      doc.dash(5, { space: 5 });
+      doc.moveTo(MARGIN, yPosition).lineTo(doc.page.width - MARGIN, yPosition).stroke();
+      doc.undash();
       yPosition += 15;
       doc.fontSize(10).font('Helvetica').fillColor('#000000');
       doc.text('Generated with Mudhro', MARGIN, yPosition, { width: pageWidth, align: 'center' });
