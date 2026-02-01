@@ -106,6 +106,43 @@ router.post(
 );
 
 /**
+ * @route   GET /api/invoices/milestones/process
+ * @desc    Process milestones and create invoices for milestones due today
+ * @access  Public (for cron jobs)
+ * @note    This endpoint processes milestones with milestoneDate = today and status = 'pending',
+ *          creates invoices for each associated client, and updates milestone status to 'created'
+ * 
+ *          Recommended Schedule: Run twice daily at 00:01 AM and 11:58 PM
+ *          Cron expressions:
+ *          - 00:01 AM: "1 0 * * *"
+ *          - 11:58 PM: "58 23 * * *"
+ * 
+ *          Duplicate Prevention:
+ *          - Only processes milestones with status = 'pending' (default status)
+ *          - Checks for existing invoices with same client, date, amount, and item before creating
+ *          - Updates milestone status to 'created' after successful invoice creation
+ */
+router.get('/milestones/process', async (req, res, next) => {
+  try {
+    const { processMilestoneInvoices } = await import('../services/milestoneInvoiceService');
+    const results = await processMilestoneInvoices();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Milestone invoice processing completed',
+      results: {
+        processed: results.processed,
+        created: results.created,
+        failed: results.failed,
+        errors: results.errors,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route   GET /api/invoices/reminders/due
  * @desc    Analyze invoices and send reminder emails based on due date conditions
  * @access  Public (for cron jobs)

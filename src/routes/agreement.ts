@@ -323,6 +323,40 @@ router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, re
 });
 
 /**
+ * @route   GET /api/agreements/:id/pdf
+ * @desc    Download agreement PDF
+ * @access  Private
+ * NOTE: This route must be defined BEFORE /:id to avoid route conflicts
+ */
+router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    const agreementId = decodeAgreementId(req.params.id);
+    if (!agreementId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid agreement ID',
+      });
+    }
+
+    const { generateAgreementPdf } = await import('../services/agreementService');
+    const pdfBuffer = await generateAgreementPdf(agreementId, req.user.userId);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Agreement-${agreementId}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route   GET /api/agreements/:id
  * @desc    Get agreement by ID
  * @access  Private

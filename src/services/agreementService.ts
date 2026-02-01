@@ -47,7 +47,7 @@ export interface AgreementResponse {
     id: number;
     paymentStructure: string;
     paymentMethod?: string;
-    milestones?: Array<{ id: number; description: string; amount: number; order: number; date?: string }>;
+    milestones?: Array<{ id: number; description: string; amount: number; order: number; date?: string; status?: string }>;
   };
   signatures: Array<{
     id: number;
@@ -276,8 +276,12 @@ export const getAgreementById = async (
 
       // Get milestones if milestone-based
       if (paymentTerm.paymentStructure === 'milestone-based') {
+        // Format milestoneDate directly in SQL using TO_CHAR to avoid timezone conversion issues
+        // This ensures we get the exact date string as stored in the database
         const milestonesResult = await client.query(
-          `SELECT id, description, amount, "order", "milestoneDate"
+          `SELECT id, description, amount, "order", 
+                  TO_CHAR("milestoneDate", 'YYYY-MM-DD') as "milestoneDate", 
+                  status, "createdAt"
            FROM agreement_payment_milestones
            WHERE "agreementPaymentTermId" = $1
            ORDER BY "order"`,
@@ -288,7 +292,9 @@ export const getAgreementById = async (
           description: m.description,
           amount: m.amount,
           order: m.order,
-          date: m.milestoneDate ? new Date(m.milestoneDate).toISOString().split('T')[0] : undefined,
+          date: m.milestoneDate || undefined, // Already formatted as YYYY-MM-DD string from SQL
+          status: m.status || 'pending', // Default to 'pending' for backward compatibility
+          createdAt: m.createdAt ? new Date(m.createdAt).toISOString() : undefined,
         }));
       }
     }
@@ -1372,4 +1378,3 @@ export const sendAgreementToClients = async (
     client.release();
   }
 };
-

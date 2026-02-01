@@ -27,11 +27,18 @@ export const validateCreateVendor = [
     .withMessage('Vendor name must be between 2 and 255 characters'),
 
   body('email')
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage('Email is required')
-    .isEmail()
-    .withMessage('Please provide a valid email address'),
+    .custom((value) => {
+      // If email is provided, it must be valid
+      if (value && value.length > 0) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          throw new Error('Please provide a valid email address');
+        }
+      }
+      return true;
+    }),
 
   body('organization')
     .optional()
@@ -72,10 +79,16 @@ export const validateUpdateVendor = [
   body('email')
     .optional()
     .trim()
-    .notEmpty()
-    .withMessage('Email cannot be empty')
-    .isEmail()
-    .withMessage('Please provide a valid email address'),
+    .custom((value) => {
+      // If email is provided, it must be valid
+      if (value && value.length > 0) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          throw new Error('Please provide a valid email address');
+        }
+      }
+      return true;
+    }),
 
   body('organization')
     .optional()

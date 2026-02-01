@@ -411,6 +411,28 @@ ALTER TABLE invoices
 ALTER TABLE invoices
     ADD COLUMN IF NOT EXISTS "balanceDueDate" DATE DEFAULT NULL;
 
+-- Add projectId column to invoices table
+ALTER TABLE invoices
+    ADD COLUMN IF NOT EXISTS "projectId" INTEGER DEFAULT NULL;
+
+-- Add foreign key constraint for projectId
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'fk_invoices_project'
+    ) THEN
+        ALTER TABLE invoices
+            ADD CONSTRAINT fk_invoices_project 
+            FOREIGN KEY ("projectId") 
+            REFERENCES projects(id) 
+            ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- Add index on projectId
+CREATE INDEX IF NOT EXISTS idx_invoices_project_id ON invoices("projectId");
+
 -- Ensure expenseScreenVisitCount column exists for existing databases
 ALTER TABLE user_sessions
     ADD COLUMN IF NOT EXISTS "expenseScreenVisitCount" INTEGER DEFAULT 0;

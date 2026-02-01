@@ -25,16 +25,19 @@ export const createVendor = async (
       throw new AppError('User not found', 404);
     }
 
-    const existingVendor = await client.query(
-      'SELECT id FROM vendors WHERE email = $1 AND "userId" = $2',
-      [vendorData.email, vendorData.userId]
-    );
-
-    if (existingVendor.rows.length > 0) {
-      throw new AppError(
-        'Vendor with this email already exists for this user',
-        409
+    // Check for duplicate email only if email is provided
+    if (vendorData.email) {
+      const existingVendor = await client.query(
+        'SELECT id FROM vendors WHERE email = $1 AND "userId" = $2',
+        [vendorData.email, vendorData.userId]
       );
+
+      if (existingVendor.rows.length > 0) {
+        throw new AppError(
+          'Vendor with this email already exists for this user',
+          409
+        );
+      }
     }
 
     const result = await client.query(
@@ -48,7 +51,7 @@ export const createVendor = async (
       [
         vendorData.organization || null,
         vendorData.fullName,
-        vendorData.email,
+        vendorData.email || null,
         vendorData.mobileNumber || null,
         vendorData.gstin || null,
         vendorData.pan || null,
@@ -181,7 +184,7 @@ export const updateVendor = async (
     }
     if (updateData.email !== undefined) {
       updateFields.push(`email = $${paramIndex}`);
-      values.push(updateData.email);
+      values.push(updateData.email || null);
       paramIndex++;
     }
     if (updateData.mobileNumber !== undefined) {

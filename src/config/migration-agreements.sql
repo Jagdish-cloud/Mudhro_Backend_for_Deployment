@@ -87,6 +87,18 @@ CREATE TABLE IF NOT EXISTS agreement_payment_milestones (
 -- Indexes for agreement_payment_milestones
 CREATE INDEX IF NOT EXISTS idx_agreement_payment_milestones_payment_term_id ON agreement_payment_milestones("agreementPaymentTermId");
 
+-- Add status column to agreement_payment_milestones (for invoice generation tracking)
+-- Default status is 'pending', changes to 'created' when invoice is created
+ALTER TABLE agreement_payment_milestones 
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending' 
+CHECK (status IN ('pending', 'created'));
+
+CREATE INDEX IF NOT EXISTS idx_agreement_payment_milestones_status 
+ON agreement_payment_milestones(status);
+
+CREATE INDEX IF NOT EXISTS idx_agreement_payment_milestones_date_status 
+ON agreement_payment_milestones("milestoneDate", status);
+
 -- Agreement Signatures Table
 CREATE TABLE IF NOT EXISTS agreement_signatures (
     id SERIAL PRIMARY KEY,

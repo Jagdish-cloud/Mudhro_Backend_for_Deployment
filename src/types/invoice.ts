@@ -2,6 +2,7 @@ export interface Invoice {
   id: number;
   userId: number;
   clientId: number;
+  projectId?: number | null;
   invoiceNumber?: string;
   invoiceFileName?: string | null;
   invoiceDate: Date;
@@ -25,6 +26,7 @@ export interface Invoice {
 
 export interface InvoiceCreateData {
   clientId: number;
+  projectId?: number | null;
   invoiceNumber?: string;
   invoiceDate: string | Date;
   dueDate: string | Date;
@@ -47,6 +49,7 @@ export interface InvoiceCreateData {
 
 export interface InvoiceUpdateData {
   clientId?: number;
+  projectId?: number | null;
   invoiceNumber?: string;
   invoiceDate?: string | Date;
   dueDate?: string | Date;
@@ -69,6 +72,7 @@ export interface InvoiceResponse {
   id: number;
   userId: number;
   clientId: number;
+  projectId?: number | null;
   invoiceNumber: string;
   invoiceFileName?: string | null;
   invoiceDate: Date;
