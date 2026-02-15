@@ -20,6 +20,8 @@ import monthlyReportRoutes from './routes/monthlyReport';
 import fileStorageRoutes from './routes/fileStorage';
 import paymentRoutes from './routes/payment';
 import agreementRoutes from './routes/agreement';
+import clientAuthRoutes from './routes/clientAuth';
+import clientInvoiceRoutes from './routes/clientInvoice';
 import { errorHandler } from './middleware/errorHandler';
 import { processDueReminders } from './services/reminderScheduler';
 import * as cron from 'node-cron';
@@ -193,6 +195,10 @@ app.use('/api/monthly-reports', monthlyReportRoutes);
 app.use('/api/files', fileStorageRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/agreements', agreementRoutes);
+
+// Client Portal Routes (separate from main API)
+app.use('/client-portal/auth', clientAuthRoutes);
+app.use('/client-portal/invoices', clientInvoiceRoutes);
 
 // 404 handler
 app.use((req, res) => {

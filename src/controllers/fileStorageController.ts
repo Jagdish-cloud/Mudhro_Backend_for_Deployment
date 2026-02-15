@@ -48,12 +48,16 @@ export const uploadFile = async (
     );
 
     // Upload file to Azure Blob
+    // For expenses, determine subfolder based on file type (generated PDFs go to Generated_pdfs)
+    const expenseSubfolder = fileType === FileType.EXPENSE ? 'Generated_pdfs' : undefined;
     const blobPath = await BlobStorageService.uploadFile(
       req.file.buffer,
       req.file.originalname,
       fileType as FileType,
       relatedIdNum,
-      req.file.mimetype
+      req.file.mimetype,
+      undefined,
+      expenseSubfolder
     );
 
     // Create database entry based on file type
@@ -254,13 +258,21 @@ export const downloadFile = async (
             throw new AppError('expenseId query parameter is required', 400);
           }
           const expenseResult = await client.query(
-            'SELECT expense_file_name FROM expenses WHERE id = $1 AND "userId" = $2',
+            'SELECT expense_file_name, "attachmentFileName" FROM expenses WHERE id = $1 AND "userId" = $2',
             [expenseId, req.user.userId]
           );
           if (expenseResult.rows.length === 0) {
             throw new AppError('Expense not found', 404);
           }
-          blobPath = `Expenses/${relatedIdNum}/${expenseResult.rows[0].expense_file_name}`;
+          const expense = expenseResult.rows[0];
+          // Determine if it's a generated PDF or uploaded document
+          if (expense.expense_file_name) {
+            blobPath = `Expense/Generated_pdfs/${relatedIdNum}/${expense.expense_file_name}`;
+          } else if (expense.attachmentFileName) {
+            blobPath = `Expense/Uploaded_Documents/${relatedIdNum}/${expense.attachmentFileName}`;
+          } else {
+            throw new AppError('Expense file not found', 404);
+          }
           break;
 
         case FileType.CLIENT_DOCUMENT:
@@ -383,17 +395,29 @@ export const deleteFile = async (
           }
           const expenseIdNum = parseInt(expenseId as string, 10);
           const expenseResult = await client.query(
-            'SELECT expense_file_name FROM expenses WHERE id = $1 AND "userId" = $2',
+            'SELECT expense_file_name, "attachmentFileName" FROM expenses WHERE id = $1 AND "userId" = $2',
             [expenseIdNum, req.user.userId]
           );
           if (expenseResult.rows.length === 0) {
             throw new AppError('Expense not found', 404);
           }
-          blobPath = `Expenses/${relatedIdNum}/${expenseResult.rows[0].expense_file_name}`;
-          // Update database
-          await client.query('UPDATE expenses SET expense_file_name = NULL WHERE id = $1', [
-            expenseIdNum,
-          ]);
+          const expense = expenseResult.rows[0];
+          // Determine if it's a generated PDF or uploaded document
+          if (expense.expense_file_name) {
+            blobPath = `Expense/Generated_pdfs/${relatedIdNum}/${expense.expense_file_name}`;
+            // Update database
+            await client.query('UPDATE expenses SET expense_file_name = NULL WHERE id = $1', [
+              expenseIdNum,
+            ]);
+          } else if (expense.attachmentFileName) {
+            blobPath = `Expense/Uploaded_Documents/${relatedIdNum}/${expense.attachmentFileName}`;
+            // Update database
+            await client.query('UPDATE expenses SET "attachmentFileName" = NULL WHERE id = $1', [
+              expenseIdNum,
+            ]);
+          } else {
+            throw new AppError('Expense file not found', 404);
+          }
           break;
 
         case FileType.CLIENT_DOCUMENT:
@@ -511,13 +535,21 @@ export const getFileUrl = async (
           }
           const expenseIdNum = parseInt(expenseId as string, 10);
           const expenseResult = await client.query(
-            'SELECT expense_file_name FROM expenses WHERE id = $1 AND "userId" = $2',
+            'SELECT expense_file_name, "attachmentFileName" FROM expenses WHERE id = $1 AND "userId" = $2',
             [expenseIdNum, req.user.userId]
           );
           if (expenseResult.rows.length === 0) {
             throw new AppError('Expense not found', 404);
           }
-          blobPath = `Expenses/${relatedIdNum}/${expenseResult.rows[0].expense_file_name}`;
+          const expense = expenseResult.rows[0];
+          // Determine if it's a generated PDF or uploaded document
+          if (expense.expense_file_name) {
+            blobPath = `Expense/Generated_pdfs/${relatedIdNum}/${expense.expense_file_name}`;
+          } else if (expense.attachmentFileName) {
+            blobPath = `Expense/Uploaded_Documents/${relatedIdNum}/${expense.attachmentFileName}`;
+          } else {
+            throw new AppError('Expense file not found', 404);
+          }
           break;
 
         case FileType.CLIENT_DOCUMENT:

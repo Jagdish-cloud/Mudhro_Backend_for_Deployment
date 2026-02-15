@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -79,6 +79,70 @@ export const strictRateLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+/**
+ * Client OTP generation rate limiter
+ * Limits OTP requests to 5 per email per hour
+ */
+export const clientOtpGenerationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit each IP to 5 OTP requests per hour
+  message: {
+    success: false,
+    message: 'Too many OTP requests. Please try again after 1 hour.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use email from request body if available, otherwise fall back to IP
+    const email = req.body?.email;
+    if (email) {
+      return `otp_gen:${email.toLowerCase()}`;
+    }
+    // Use ipKeyGenerator helper for proper IPv6 handling
+    return `otp_gen:ip:${ipKeyGenerator(req)}`;
+  },
+});
+
+/**
+ * Client OTP verification rate limiter
+ * Limits OTP verification attempts to 10 per email per 15 minutes
+ */
+export const clientOtpVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each email to 10 verification attempts per 15 minutes
+  message: {
+    success: false,
+    message: 'Too many OTP verification attempts. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use email from request body if available, otherwise fall back to IP
+    const email = req.body?.email;
+    if (email) {
+      return `otp_verify:${email.toLowerCase()}`;
+    }
+    // Use ipKeyGenerator helper for proper IPv6 handling
+    return `otp_verify:ip:${ipKeyGenerator(req)}`;
+  },
+});
+
+/**
+ * Client login rate limiter
+ * Limits login attempts to prevent brute force
+ */
+export const clientLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login attempts per 15 minutes
+  message: {
+    success: false,
+    message: 'Too many login attempts. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
 });
 
 /**

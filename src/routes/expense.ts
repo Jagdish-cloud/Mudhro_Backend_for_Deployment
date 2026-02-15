@@ -1,12 +1,12 @@
 import express from 'express';
 import multer from 'multer';
-import fs from 'fs';
 import path from 'path';
 import {
   createExpense,
   deleteExpense,
   getExpenseById,
   getExpensesByUserId,
+  getExpensesByProjectId,
   updateExpense,
   updateExpenseAttachmentFilename,
   updateExpensePdfFilename,
@@ -17,6 +17,7 @@ import {
 } from '../middleware/expenseValidator';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { decodeId, urlDecode } from '../utils/urlEncoder';
+import BlobStorageService, { FileType } from '../services/blobStorageService';
 
 const router = express.Router();
 
@@ -179,6 +180,36 @@ router.get('/', authenticateToken, async (req: AuthRequest, res, next) => {
   }
 });
 
+router.get('/project/:projectId', authenticateToken, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    const projectId = decodeExpenseId(req.params.projectId);
+    if (projectId === null || projectId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid project ID',
+      });
+    }
+
+    const expenses = await getExpensesByProjectId(projectId, req.user.userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Expenses retrieved successfully',
+      expenses,
+      count: expenses.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', authenticateToken, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
@@ -310,27 +341,35 @@ router.post(
 
       const expense = await getExpenseById(expenseId, req.user.userId);
 
-      const expensesRoot = path.join(process.cwd(), 'Expenses', String(req.user.userId));
-      await fs.promises.mkdir(expensesRoot, { recursive: true });
-
       const fileExtension = path.extname(req.file.originalname) || 
         (req.file.mimetype === 'application/pdf' ? '.pdf' : 
          req.file.mimetype.startsWith('image/') ? '.jpg' : '');
       const fileName = `${expense.billNumber || `BILL-${expenseId}`}_${Date.now()}${fileExtension}`;
-      const filePath = path.join(expensesRoot, fileName);
 
-      await fs.promises.writeFile(filePath, req.file.buffer);
+      // Upload to Azure Blob Storage
+      const blobPath = await BlobStorageService.uploadFile(
+        req.file.buffer,
+        fileName,
+        FileType.EXPENSE,
+        req.user.userId,
+        req.file.mimetype,
+        undefined,
+        'Uploaded_Documents'
+      );
 
       // Delete old attachment if exists
       if (expense.attachmentFileName) {
-        const oldPath = path.join(expensesRoot, expense.attachmentFileName);
-        await fs.promises.rm(oldPath, { force: true });
+        // Construct old blob path using the same pattern as uploadFile generates
+        // Format: "Expense/Uploaded_Documents/{userId}/{fileName}"
+        const oldBlobPath = `Expense/Uploaded_Documents/${req.user.userId}/${expense.attachmentFileName}`;
+        await BlobStorageService.deleteFile(oldBlobPath);
       }
 
       try {
         await updateExpenseAttachmentFilename(expenseId, req.user.userId, fileName);
       } catch (error) {
-        await fs.promises.rm(filePath, { force: true });
+        // Rollback blob upload if database update fails
+        await BlobStorageService.deleteFile(blobPath);
         throw error;
       }
 
@@ -383,22 +422,27 @@ router.post(
       const expense = await getExpenseById(expenseId, req.user.userId);
       console.log(`[Expense Route] Expense found: ${expense.id}, ${expense.billNumber}`);
 
-      const expensesRoot = path.join(process.cwd(), 'Expenses', String(req.user.userId));
-      await fs.promises.mkdir(expensesRoot, { recursive: true });
-
       const fileName = expense.billNumber && expense.billNumber.endsWith('.pdf')
         ? expense.billNumber
         : `${expense.billNumber || `BILL-${expenseId}`}.pdf`;
-      const filePath = path.join(expensesRoot, fileName);
 
-      console.log(`[Expense Route] Saving PDF to: ${filePath}`);
-      await fs.promises.writeFile(filePath, req.file.buffer);
-      console.log(`[Expense Route] PDF file saved successfully`);
+      // Upload to Azure Blob Storage
+      const blobPath = await BlobStorageService.uploadFile(
+        req.file.buffer,
+        fileName,
+        FileType.EXPENSE,
+        req.user.userId,
+        req.file.mimetype,
+        undefined,
+        'Generated_pdfs'
+      );
 
+      // Delete old file if it exists and has a different name
       if (expense.expenseFileName && expense.expenseFileName !== fileName) {
-        const previousPath = path.join(expensesRoot, expense.expenseFileName);
-        console.log(`[Expense Route] Deleting old PDF: ${previousPath}`);
-        await fs.promises.rm(previousPath, { force: true });
+        // Construct old blob path using the same pattern as uploadFile generates
+        // Format: "Expense/Generated_pdfs/{userId}/{fileName}"
+        const oldBlobPath = `Expense/Generated_pdfs/${req.user.userId}/${expense.expenseFileName}`;
+        await BlobStorageService.deleteFile(oldBlobPath);
       }
 
       try {
@@ -406,8 +450,9 @@ router.post(
         await updateExpensePdfFilename(expenseId, req.user.userId, fileName);
         console.log(`[Expense Route] Database updated successfully`);
       } catch (error) {
-        console.error(`[Expense Route] Error updating database, cleaning up file:`, error);
-        await fs.promises.rm(filePath, { force: true });
+        console.error(`[Expense Route] Error updating database, cleaning up blob:`, error);
+        // Rollback blob upload if database update fails
+        await BlobStorageService.deleteFile(blobPath);
         throw error;
       }
 
@@ -449,35 +494,21 @@ router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res, next) =>
     const expense = await getExpenseById(expenseId, req.user.userId);
     console.log(`[Expense Route] Expense found: ${expense.id}, ${expense.billNumber}`);
 
-    const expensesRoot = path.join(process.cwd(), 'Expenses', String(req.user.userId));
     const fileName = expense.expenseFileName && expense.expenseFileName.trim() !== ''
       ? expense.expenseFileName
       : expense.billNumber && expense.billNumber.endsWith('.pdf')
         ? expense.billNumber
         : `${expense.billNumber || `BILL-${expenseId}`}.pdf`;
-    const filePath = path.join(expensesRoot, fileName);
 
-    console.log(`[Expense Route] Looking for PDF at: ${filePath}`);
-    console.log(`[Expense Route] Expense fileName from DB: ${expense.expenseFileName || 'null'}`);
-    console.log(`[Expense Route] Bill number: ${expense.billNumber || 'null'}`);
-
-    if (!fs.existsSync(filePath)) {
-      console.warn(`[Expense Route] PDF file not found at: ${filePath}`);
-      console.log(`[Expense Route] Expenses directory exists: ${fs.existsSync(expensesRoot)}`);
-      if (fs.existsSync(expensesRoot)) {
-        const files = await fs.promises.readdir(expensesRoot);
-        console.log(`[Expense Route] Files in expenses directory:`, files);
-      }
-      return res.status(404).json({
-        success: false,
-        message: 'Expense PDF not found. Please regenerate the PDF from the expense edit page.',
-      });
-    }
+    // Download from Azure Blob Storage
+    const blobPath = `Expense/Generated_pdfs/${req.user.userId}/${fileName}`;
+    const fileData = await BlobStorageService.downloadFile(blobPath);
 
     console.log(`[Expense Route] PDF file found, sending: ${fileName}`);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.sendFile(filePath);
+    res.setHeader('Content-Type', fileData.contentType);
+    res.setHeader('Content-Length', fileData.contentLength);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.send(fileData.buffer);
   } catch (error) {
     next(error);
   }
@@ -517,20 +548,14 @@ router.get('/:id/attachment', authenticateToken, async (req: AuthRequest, res, n
       });
     }
 
-    const expensesRoot = path.join(process.cwd(), 'Expenses', String(req.user.userId));
-    const filePath = path.join(expensesRoot, expense.attachmentFileName);
+    // Download from Azure Blob Storage
+    const blobPath = `Expense/Uploaded_Documents/${req.user.userId}/${expense.attachmentFileName}`;
+    const fileData = await BlobStorageService.downloadFile(blobPath);
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        success: false,
-        message: 'Expense attachment file not found',
-      });
-    }
-
-    const isPdf = expense.attachmentFileName.endsWith('.pdf');
-    res.setHeader('Content-Type', isPdf ? 'application/pdf' : 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${expense.attachmentFileName}"`);
-    res.sendFile(filePath);
+    res.setHeader('Content-Type', fileData.contentType);
+    res.setHeader('Content-Length', fileData.contentLength);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(expense.attachmentFileName)}"`);
+    res.send(fileData.buffer);
   } catch (error) {
     next(error);
   }

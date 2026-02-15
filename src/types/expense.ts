@@ -8,6 +8,7 @@ export interface Expense {
   id: number;
   userId: number;
   vendorId: number;
+  projectId: number;
   billNumber: string;
   billDate: Date;
   dueDate: Date;
@@ -23,6 +24,7 @@ export interface Expense {
 
 export interface ExpenseCreateData {
   vendorId: number;
+  projectId: number;
   billNumber?: string;
   billDate: string | Date;
   dueDate: string | Date;
@@ -36,6 +38,7 @@ export interface ExpenseCreateData {
 
 export interface ExpenseUpdateData {
   vendorId?: number;
+  projectId?: number;
   billNumber?: string;
   billDate?: string | Date;
   dueDate?: string | Date;
@@ -49,6 +52,7 @@ export interface ExpenseResponse {
   id: number;
   userId: number;
   vendorId: number;
+  projectId: number;
   billNumber: string;
   billDate: Date;
   dueDate: Date;
@@ -60,6 +64,7 @@ export interface ExpenseResponse {
   additionalNotes: string | null;
   createdAt: Date;
   updatedAt: Date;
+  vendorName?: string | null;
 }
 
 

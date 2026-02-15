@@ -15,7 +15,7 @@ import pool from '../config/database';
 export enum FileType {
   LOGO = 'Logos',
   INVOICE = 'Invoices',
-  EXPENSE = 'Expenses',
+  EXPENSE = 'Expense',
   CLIENT_DOCUMENT = 'ClientDocuments',
   VENDOR_DOCUMENT = 'VendorDocuments',
   MONTHLY_REPORT = 'MonthlyReports',
@@ -49,7 +49,8 @@ export class BlobStorageService {
     fileType: FileType,
     relatedId: number,
     fileName: string,
-    month?: string // Optional month parameter for monthly reports (format: YYYY-MM)
+    month?: string, // Optional month parameter for monthly reports (format: YYYY-MM)
+    expenseSubfolder?: 'Generated_pdfs' | 'Uploaded_Documents' // Optional subfolder for expenses
   ): string {
     // Remove any leading slashes or dots from fileName for security
     const sanitizedFileName = fileName.replace(/^[./\\]+/, '').replace(/\.\./g, '');
@@ -57,6 +58,11 @@ export class BlobStorageService {
     // Monthly reports use month-based folder structure: MonthlyReports/{month}/{fileName}
     if (fileType === FileType.MONTHLY_REPORT && month) {
       return `${fileType}/${month}/${sanitizedFileName}`;
+    }
+    
+    // Expenses use subfolder structure: Expense/{expenseSubfolder}/{relatedId}/{fileName}
+    if (fileType === FileType.EXPENSE && expenseSubfolder) {
+      return `${fileType}/${expenseSubfolder}/${relatedId}/${sanitizedFileName}`;
     }
     
     // Other file types use: {fileType}/{relatedId}/{fileName}
@@ -95,6 +101,7 @@ export class BlobStorageService {
    * @param relatedId - User_ID, Client_ID, or Vendor_ID (not used for MONTHLY_REPORT)
    * @param mimeType - MIME type of the file
    * @param month - Optional month parameter for monthly reports (format: YYYY-MM)
+   * @param expenseSubfolder - Optional subfolder for expenses ('Generated_pdfs' or 'Uploaded_Documents')
    * @returns Blob path
    */
   public static async uploadFile(
@@ -103,14 +110,15 @@ export class BlobStorageService {
     fileType: FileType,
     relatedId: number,
     mimeType?: string,
-    month?: string
+    month?: string,
+    expenseSubfolder?: 'Generated_pdfs' | 'Uploaded_Documents'
   ): Promise<string> {
     try {
       // Ensure container exists
       await azureBlobConfig.ensureContainerExists();
 
       // Generate blob path
-      const blobPath = this.generateBlobPath(fileType, relatedId, fileName, month);
+      const blobPath = this.generateBlobPath(fileType, relatedId, fileName, month, expenseSubfolder);
 
       // Get block blob client for upload
       const blockBlobClient = this.getBlockBlobClient(blobPath);

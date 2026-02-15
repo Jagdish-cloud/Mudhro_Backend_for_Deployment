@@ -35,6 +35,16 @@ export const createExpense = async (
       throw new AppError('Vendor not found', 404);
     }
 
+    // Verify project exists and belongs to user
+    const projectCheck = await client.query(
+      'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
+      [expenseData.projectId, expenseData.userId]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      throw new AppError('Project not found', 404);
+    }
+
     const taxPercentage = expenseData.taxPercentage ?? 0;
 
     let subtotal = 0;
@@ -55,15 +65,16 @@ export const createExpense = async (
 
     const result = await client.query(
       `INSERT INTO expenses (
-        "userId", "vendorId", "billNumber", "billDate", "dueDate",
+        "userId", "vendorId", "projectId", "billNumber", "billDate", "dueDate",
         "taxPercentage", "subTotalAmount", "totalAmount", "additionalNotes", "createdAt", "updatedAt"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING 
-        id, "userId", "vendorId", "billNumber", "billDate", "dueDate",
+        id, "userId", "vendorId", "projectId", "billNumber", "billDate", "dueDate",
         "taxPercentage", "subTotalAmount", "totalAmount", "attachmentFileName", expense_file_name, "additionalNotes", "createdAt", "updatedAt"`,
       [
         expenseData.userId,
         expenseData.vendorId,
+        expenseData.projectId,
         expenseData.billNumber || null,
         expenseData.billDate,
         expenseData.dueDate,
@@ -102,7 +113,7 @@ export const getExpensesByUserId = async (
   try {
     const result = await client.query(
       `SELECT 
-        id, "userId", "vendorId", "billNumber", "billDate", "dueDate",
+        id, "userId", "vendorId", "projectId", "billNumber", "billDate", "dueDate",
         "taxPercentage", "subTotalAmount", "totalAmount", "attachmentFileName", expense_file_name, "additionalNotes", "createdAt", "updatedAt"
       FROM expenses 
       WHERE "userId" = $1
@@ -131,7 +142,7 @@ export const getExpenseById = async (
   try {
     const result = await client.query(
       `SELECT 
-        id, "userId", "vendorId", "billNumber", "billDate", "dueDate",
+        id, "userId", "vendorId", "projectId", "billNumber", "billDate", "dueDate",
         "taxPercentage", "subTotalAmount", "totalAmount", "attachmentFileName", expense_file_name, "additionalNotes", "createdAt", "updatedAt"
       FROM expenses 
       WHERE id = $1 AND "userId" = $2`,
@@ -184,6 +195,18 @@ export const updateExpense = async (
       }
     }
 
+    // If projectId is being updated, verify it exists and belongs to user
+    if (updateData.projectId !== undefined && updateData.projectId !== null) {
+      const projectCheck = await client.query(
+        'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
+        [updateData.projectId, userId]
+      );
+
+      if (projectCheck.rows.length === 0) {
+        throw new AppError('Project not found', 404);
+      }
+    }
+
     const updateFields: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
@@ -228,6 +251,11 @@ export const updateExpense = async (
       values.push(updateData.additionalNotes);
       paramIndex++;
     }
+    if (updateData.projectId !== undefined) {
+      updateFields.push(`"projectId" = $${paramIndex}`);
+      values.push(updateData.projectId);
+      paramIndex++;
+    }
 
     if (updateFields.length === 0) {
       throw new AppError('No fields to update', 400);
@@ -240,7 +268,7 @@ export const updateExpense = async (
       SET ${updateFields.join(', ')}, "updatedAt" = CURRENT_TIMESTAMP
       WHERE id = $${paramIndex} AND "userId" = $${paramIndex + 1}
       RETURNING 
-        id, "userId", "vendorId", "billNumber", "billDate", "dueDate",
+        id, "userId", "vendorId", "projectId", "billNumber", "billDate", "dueDate",
         "taxPercentage", "subTotalAmount", "totalAmount", "attachmentFileName", expense_file_name, "additionalNotes", "createdAt", "updatedAt"`,
       values
     );
@@ -288,7 +316,7 @@ export const deleteExpense = async (
     // Delete expense files from Azure Blob Storage if they exist
     if (expense.expense_file_name) {
       try {
-        const blobPath = `Expenses/${userId}/${expense.expense_file_name}`;
+        const blobPath = `Expense/Generated_pdfs/${userId}/${expense.expense_file_name}`;
         await BlobStorageService.deleteFile(blobPath);
       } catch (fileError: any) {
         // Log error but don't fail the deletion if file doesn't exist
@@ -296,10 +324,10 @@ export const deleteExpense = async (
       }
     }
 
-    // Note: attachmentFileName is deprecated, but if it exists, delete it too
+    // Delete uploaded attachment if it exists
     if (expense.attachmentFileName) {
       try {
-        const blobPath = `Expenses/${userId}/${expense.attachmentFileName}`;
+        const blobPath = `Expense/Uploaded_Documents/${userId}/${expense.attachmentFileName}`;
         await BlobStorageService.deleteFile(blobPath);
       } catch (fileError: any) {
         // Log error but don't fail the deletion if file doesn't exist
@@ -383,21 +411,69 @@ export const updateExpensePdfFilename = async (
   }
 };
 
-const mapExpenseToResponse = (dbExpense: any): ExpenseResponse => ({
-  id: dbExpense.id,
-  userId: dbExpense.userId,
-  vendorId: dbExpense.vendorId,
-  billNumber: dbExpense.billNumber,
-  billDate: new Date(dbExpense.billDate),
-  dueDate: new Date(dbExpense.dueDate),
-  taxPercentage: parseFloat(dbExpense.taxPercentage || 0),
-  subTotalAmount: parseFloat(dbExpense.subTotalAmount || 0),
-  totalAmount: parseFloat(dbExpense.totalAmount || 0),
-  attachmentFileName: dbExpense.attachmentFileName || null,
-  expenseFileName: dbExpense.expense_file_name || null,
-  additionalNotes: dbExpense.additionalNotes,
-  createdAt: new Date(dbExpense.createdAt),
-  updatedAt: new Date(dbExpense.updatedAt),
-});
+/**
+ * Get expenses by project ID
+ */
+export const getExpensesByProjectId = async (
+  projectId: number,
+  userId: number
+): Promise<ExpenseResponse[]> => {
+  const client = await pool.connect();
+
+  try {
+    // Verify project exists and belongs to user
+    const projectCheck = await client.query(
+      'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
+      [projectId, userId]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      throw new AppError('Project not found', 404);
+    }
+
+    const result = await client.query(
+      `SELECT 
+        e.id, e."userId", e."vendorId", e."projectId", e."billNumber", e."billDate", e."dueDate",
+        e."taxPercentage", e."subTotalAmount", e."totalAmount", e."attachmentFileName", e.expense_file_name, e."additionalNotes", e."createdAt", e."updatedAt",
+        v."fullName" AS vendor_name
+      FROM expenses e
+      INNER JOIN vendors v ON e."vendorId" = v.id
+      WHERE e."projectId" = $1 AND e."userId" = $2
+      ORDER BY e."billDate" DESC, e."createdAt" DESC`,
+      [projectId, userId]
+    );
+
+    return result.rows.map(mapExpenseToResponse);
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    console.error('Error fetching expenses by project:', error);
+    throw new AppError('Failed to fetch expenses', 500);
+  } finally {
+    client.release();
+  }
+};
+
+const mapExpenseToResponse = (dbExpense: any): ExpenseResponse => {
+  return {
+    id: dbExpense.id,
+    userId: dbExpense.userId,
+    vendorId: dbExpense.vendorId,
+    projectId: dbExpense.projectId,
+    billNumber: dbExpense.billNumber,
+    billDate: new Date(dbExpense.billDate),
+    dueDate: new Date(dbExpense.dueDate),
+    taxPercentage: parseFloat(dbExpense.taxPercentage || 0),
+    subTotalAmount: parseFloat(dbExpense.subTotalAmount || 0),
+    totalAmount: parseFloat(dbExpense.totalAmount || 0),
+    attachmentFileName: dbExpense.attachmentFileName || null,
+    expenseFileName: dbExpense.expense_file_name || null,
+    additionalNotes: dbExpense.additionalNotes,
+    createdAt: new Date(dbExpense.createdAt),
+    updatedAt: new Date(dbExpense.updatedAt),
+    vendorName: dbExpense.vendor_name || null,
+  };
+};
 
 

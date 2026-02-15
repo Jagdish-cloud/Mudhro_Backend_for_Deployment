@@ -275,6 +275,80 @@ export const deleteProject = async (
 // Import and use projectClientService.getClientsByProjectId instead
 
 /**
+ * Get project financial summary including invoices and expenses
+ */
+export interface ProjectFinancialSummary {
+  projectId: number;
+  totalInvoices: number;
+  totalExpenses: number;
+  profit: number;
+  invoiceCount: number;
+  expenseCount: number;
+}
+
+export const getProjectFinancialSummary = async (
+  projectId: number,
+  userId: number
+): Promise<ProjectFinancialSummary> => {
+  const client = await pool.connect();
+
+  try {
+    // Verify project exists and belongs to user
+    const projectCheck = await client.query(
+      'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
+      [projectId, userId]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      throw new AppError('Project not found', 404);
+    }
+
+    // Get invoice totals
+    const invoicesResult = await client.query(
+      `SELECT 
+        COUNT(*) as invoice_count,
+        COALESCE(SUM("totalAmount"), 0) as total_invoices
+      FROM invoices 
+      WHERE "projectId" = $1 AND "userId" = $2`,
+      [projectId, userId]
+    );
+
+    // Get expense totals
+    const expensesResult = await client.query(
+      `SELECT 
+        COUNT(*) as expense_count,
+        COALESCE(SUM("totalAmount"), 0) as total_expenses
+      FROM expenses 
+      WHERE "projectId" = $1 AND "userId" = $2`,
+      [projectId, userId]
+    );
+
+    const invoiceCount = parseInt(invoicesResult.rows[0].invoice_count || '0', 10);
+    const totalInvoices = parseFloat(invoicesResult.rows[0].total_invoices || '0');
+    const expenseCount = parseInt(expensesResult.rows[0].expense_count || '0', 10);
+    const totalExpenses = parseFloat(expensesResult.rows[0].total_expenses || '0');
+    const profit = totalInvoices - totalExpenses;
+
+    return {
+      projectId,
+      totalInvoices,
+      totalExpenses,
+      profit,
+      invoiceCount,
+      expenseCount,
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    console.error('Error fetching project financial summary:', error);
+    throw new AppError('Failed to fetch project financial summary', 500);
+  } finally {
+    client.release();
+  }
+};
+
+/**
  * Map database project to response DTO
  */
 const mapProjectToResponse = (dbProject: any): ProjectResponse => {

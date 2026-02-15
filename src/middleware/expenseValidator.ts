@@ -25,6 +25,12 @@ export const validateCreateExpense = [
     .isInt({ min: 1 })
     .withMessage('Vendor ID must be a valid integer'),
 
+  body('projectId')
+    .notEmpty()
+    .withMessage('Project ID is required')
+    .isInt({ min: 1 })
+    .withMessage('Project ID must be a valid integer'),
+
   body('billDate')
     .notEmpty()
     .withMessage('Bill date is required')
@@ -101,6 +107,11 @@ export const validateUpdateExpense = [
     .optional()
     .isInt({ min: 1 })
     .withMessage('Vendor ID must be a valid integer'),
+
+  body('projectId')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Project ID must be a valid integer'),
 
   body('billDate')
     .optional()

@@ -690,6 +690,28 @@ ALTER TABLE expenses
     ADD COLUMN IF NOT EXISTS "subTotalAmount" DECIMAL(15, 2) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS "attachmentFileName" VARCHAR(255);
 
+-- Add projectId column to expenses table
+ALTER TABLE expenses
+    ADD COLUMN IF NOT EXISTS "projectId" INTEGER DEFAULT NULL;
+
+-- Add foreign key constraint for projectId
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'fk_expenses_project'
+    ) THEN
+        ALTER TABLE expenses
+            ADD CONSTRAINT fk_expenses_project 
+            FOREIGN KEY ("projectId") 
+            REFERENCES projects(id) 
+            ON DELETE RESTRICT;
+    END IF;
+END $$;
+
+-- Add index on projectId for better query performance
+CREATE INDEX IF NOT EXISTS idx_expenses_project_id ON expenses("projectId");
+
 CREATE TABLE IF NOT EXISTS expense_items (
     id SERIAL PRIMARY KEY,
     "expenseId" INTEGER NOT NULL,
