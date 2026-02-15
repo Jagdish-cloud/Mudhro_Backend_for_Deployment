@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -100,8 +100,9 @@ export const clientOtpGenerationLimiter = rateLimit({
     if (email) {
       return `otp_gen:${email.toLowerCase()}`;
     }
-    // Use ipKeyGenerator helper for proper IPv6 handling
-    return `otp_gen:ip:${ipKeyGenerator(req)}`;
+    // Extract IP address from request (handles IPv6 and proxies)
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `otp_gen:ip:${ip}`;
   },
 });
 
@@ -124,8 +125,9 @@ export const clientOtpVerificationLimiter = rateLimit({
     if (email) {
       return `otp_verify:${email.toLowerCase()}`;
     }
-    // Use ipKeyGenerator helper for proper IPv6 handling
-    return `otp_verify:ip:${ipKeyGenerator(req)}`;
+    // Extract IP address from request (handles IPv6 and proxies)
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `otp_verify:ip:${ip}`;
   },
 });
 
