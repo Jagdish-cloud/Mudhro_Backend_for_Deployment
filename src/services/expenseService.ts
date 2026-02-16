@@ -35,14 +35,16 @@ export const createExpense = async (
       throw new AppError('Vendor not found', 404);
     }
 
-    // Verify project exists and belongs to user
-    const projectCheck = await client.query(
-      'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
-      [expenseData.projectId, expenseData.userId]
-    );
+    // Verify project exists and belongs to user (only if projectId is provided)
+    if (expenseData.projectId) {
+      const projectCheck = await client.query(
+        'SELECT id FROM projects WHERE id = $1 AND "userId" = $2',
+        [expenseData.projectId, expenseData.userId]
+      );
 
-    if (projectCheck.rows.length === 0) {
-      throw new AppError('Project not found', 404);
+      if (projectCheck.rows.length === 0) {
+        throw new AppError('Project not found', 404);
+      }
     }
 
     const taxPercentage = expenseData.taxPercentage ?? 0;
@@ -74,7 +76,7 @@ export const createExpense = async (
       [
         expenseData.userId,
         expenseData.vendorId,
-        expenseData.projectId,
+        expenseData.projectId || null,
         expenseData.billNumber || null,
         expenseData.billDate,
         expenseData.dueDate,

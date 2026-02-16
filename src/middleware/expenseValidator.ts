@@ -26,8 +26,7 @@ export const validateCreateExpense = [
     .withMessage('Vendor ID must be a valid integer'),
 
   body('projectId')
-    .notEmpty()
-    .withMessage('Project ID is required')
+    .optional()
     .isInt({ min: 1 })
     .withMessage('Project ID must be a valid integer'),
 
